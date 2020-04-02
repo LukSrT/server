@@ -28,6 +28,7 @@
 #include "configmanager.h"
 #include "scriptmanager.h"
 #include "rsa.h"
+#include "prey.h"
 #include "protocolold.h"
 #include "protocollogin.h"
 #include "protocolstatus.h"
@@ -35,7 +36,6 @@
 #include "scheduler.h"
 #include "databasetasks.h"
 #include "script.h"
-#include "prey.h"
 #include <fstream>
 
 Database g_database;

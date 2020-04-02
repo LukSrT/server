@@ -1282,11 +1282,11 @@ void ProtocolGame::parsePreyAction(NetworkMessage& msg)
 
 void ProtocolGame::sendResourceData(ResourceType_t resourceType, int64_t amount)
 {
-	NetworkMessage msg;
-	msg.addByte(0xEE);
-	msg.addByte(resourceType);
-	msg.add<int64_t>(amount);
-	writeToOutputBuffer(msg);
+	playermsg.reset();
+	playermsg.addByte(0xEE);
+	playermsg.addByte(resourceType);
+	playermsg.add<int64_t>(amount);
+	writeToOutputBuffer(playermsg);
 }
 
 // Send methods
@@ -2074,7 +2074,6 @@ void ProtocolGame::sendBasicData()
 		playermsg.add<uint32_t>(0);
 	}
 	playermsg.addByte(player->getVocation()->getClientId());
-	playermsg.addByte(1);
 	if (version >= 1100) {
 		playermsg.addByte(((player->getVocation()->getId() != 0) ? 0x01 : 0x00));
 	}
@@ -2084,6 +2083,114 @@ void ProtocolGame::sendBasicData()
 	for (auto spellId : spells) {
 		playermsg.addByte(spellId);
 	}
+	writeToOutputBuffer(playermsg);
+}
+
+void ProtocolGame::sendPreyData(uint8_t preySlotId)
+{
+	if (preySlotId >= PREY_SLOTCOUNT) {
+		return;
+	}
+
+	playermsg.reset();
+	PreyData& currentPreyData = player->preyData[preySlotId];
+	playermsg.addByte(0xE8);
+	playermsg.addByte(preySlotId);
+	playermsg.addByte(currentPreyData.state);
+	if (currentPreyData.state == STATE_LOCKED) {
+		playermsg.addByte(UNLOCK_STORE);
+	} else if (currentPreyData.state == STATE_SELECTION || currentPreyData.state == STATE_SELECTION_CHANGE_MONSTER) {
+		if (currentPreyData.state == STATE_SELECTION_CHANGE_MONSTER) {
+			playermsg.addByte(static_cast<uint8_t>(currentPreyData.bonusType));
+			playermsg.add<uint16_t>(currentPreyData.bonusValue);
+			playermsg.addByte(currentPreyData.bonusGrade);
+		}
+		playermsg.addByte(currentPreyData.preyList.size());
+		for (const std::string& preyName : currentPreyData.preyList) {
+			playermsg.addString(preyName);
+			if (MonsterType* mType = g_monsters.getMonsterType(preyName)) {
+				playermsg.add<uint16_t>(mType->info.outfit.lookType == 0 ? 21 : mType->info.outfit.lookType);
+				playermsg.addByte(mType->info.outfit.lookHead);
+				playermsg.addByte(mType->info.outfit.lookBody);
+				playermsg.addByte(mType->info.outfit.lookLegs);
+				playermsg.addByte(mType->info.outfit.lookFeet);
+				playermsg.addByte(mType->info.outfit.lookAddons);
+			} else {
+				return player->generatePreyData();
+			}
+		}
+	} else if (currentPreyData.state == STATE_ACTIVE) {
+		playermsg.addString(currentPreyData.preyMonster);
+		if (MonsterType* mType = g_monsters.getMonsterType(currentPreyData.preyMonster)) {
+			playermsg.add<uint16_t>(mType->info.outfit.lookType == 0 ? 21 : mType->info.outfit.lookType);
+			playermsg.addByte(mType->info.outfit.lookHead);
+			playermsg.addByte(mType->info.outfit.lookBody);
+			playermsg.addByte(mType->info.outfit.lookLegs);
+			playermsg.addByte(mType->info.outfit.lookFeet);
+			playermsg.addByte(mType->info.outfit.lookAddons);
+		} else {
+			return player->generatePreyData();
+		}
+
+		playermsg.addByte(static_cast<uint8_t>(currentPreyData.bonusType));
+		playermsg.add<uint16_t>(currentPreyData.bonusValue);
+		playermsg.addByte(currentPreyData.bonusGrade);
+		playermsg.add<uint16_t>(currentPreyData.timeLeft);
+	}
+
+	playermsg.add<uint16_t>(player->getFreeRerollTime(preySlotId));
+	if (version >= 1190) {
+		playermsg.addByte(0x00); //preyWildCards
+	}
+	writeToOutputBuffer(playermsg);
+}
+
+void ProtocolGame::sendRerollPrice(uint32_t price)
+{
+	playermsg.reset();
+	playermsg.addByte(0xE9);
+	playermsg.add<uint32_t>(price);
+	if (version >= 1190) {
+		playermsg.addByte(0x01); // bomus reroll
+		playermsg.addByte(0x05);
+	}
+
+	if (version >= 1230) {
+		playermsg.add<uint32_t>(800);
+		playermsg.add<uint32_t>(800);
+		playermsg.addByte(2);
+		playermsg.addByte(1);
+	}
+	writeToOutputBuffer(playermsg);
+}
+
+void ProtocolGame::sendFreeListRerollAvailability(uint8_t preySlotId, uint16_t time)
+{
+	playermsg.reset();
+	playermsg.addByte(0xE6);
+	playermsg.add<uint8_t>(preySlotId);
+	playermsg.add<uint16_t>(time);
+
+	writeToOutputBuffer(playermsg);
+}
+
+void ProtocolGame::sendPreyTimeLeft(uint8_t preySlotId, uint16_t timeLeft)
+{
+	playermsg.reset();
+	playermsg.addByte(0xE7);
+	playermsg.add<uint8_t>(preySlotId);
+	playermsg.add<uint16_t>(timeLeft);
+
+	writeToOutputBuffer(playermsg);	
+}
+
+void ProtocolGame::sendMessageDialog(MessageDialog_t type, const std::string& message)
+{
+	playermsg.reset();
+	playermsg.addByte(0xED);
+	playermsg.addByte(type);
+	playermsg.addString(message);
+
 	writeToOutputBuffer(playermsg);
 }
 
@@ -2138,103 +2245,6 @@ void ProtocolGame::sendGameNews()
 	playermsg.add<uint32_t>(0x01); // unknown
 	playermsg.addByte(1); //(0 = open | 1 = highlight)
 	writeToOutputBuffer(playermsg);
-}
-
-void ProtocolGame::sendPreyData(uint8_t preySlotId)
-{
-	if (preySlotId >= PREY_SLOTCOUNT) {
-		return;
-	}
-
-	NetworkMessage msg;
-	PreyData& currentPreyData = player->preyData[preySlotId];
-	msg.addByte(0xE8);
-	msg.addByte(preySlotId);
-	msg.addByte(currentPreyData.state);
-	if (currentPreyData.state == STATE_LOCKED) {
-		msg.addByte(UNLOCK_STORE);
-	} else if (currentPreyData.state == STATE_SELECTION || currentPreyData.state == STATE_SELECTION_CHANGE_MONSTER) {
-		if (currentPreyData.state == STATE_SELECTION_CHANGE_MONSTER) {
-			msg.addByte(static_cast<uint8_t>(currentPreyData.bonusType));
-			msg.add<uint16_t>(currentPreyData.bonusValue);
-			msg.addByte(currentPreyData.bonusGrade);
-		}
-		msg.addByte(currentPreyData.preyList.size());
-		for (const std::string& preyName : currentPreyData.preyList) {
-			msg.addString(preyName);
-			if (MonsterType* mType = g_monsters.getMonsterType(preyName)) {
-				msg.add<uint16_t>(mType->info.outfit.lookType);
-				msg.addByte(mType->info.outfit.lookHead);
-				msg.addByte(mType->info.outfit.lookBody);
-				msg.addByte(mType->info.outfit.lookLegs);
-				msg.addByte(mType->info.outfit.lookFeet);
-				msg.addByte(mType->info.outfit.lookAddons);
-			} else {
-				msg.add<uint16_t>(0);
-				msg.add<uint16_t>(0);
-			}
-		}
-	} else if (currentPreyData.state == STATE_ACTIVE) {
-		msg.addString(currentPreyData.preyMonster);
-		if (MonsterType* mType = g_monsters.getMonsterType(currentPreyData.preyMonster)) {
-			msg.add<uint16_t>(mType->info.outfit.lookType);
-			msg.addByte(mType->info.outfit.lookHead);
-			msg.addByte(mType->info.outfit.lookBody);
-			msg.addByte(mType->info.outfit.lookLegs);
-			msg.addByte(mType->info.outfit.lookFeet);
-			msg.addByte(mType->info.outfit.lookAddons);
-		} else {
-			msg.add<uint16_t>(0);
-			msg.add<uint16_t>(0);
-		}
-
-		msg.addByte(static_cast<uint8_t>(currentPreyData.bonusType));
-		msg.add<uint16_t>(currentPreyData.bonusValue);
-		msg.addByte(currentPreyData.bonusGrade);
-	msg.add<uint16_t>(currentPreyData.timeLeft);
-	}
-
-	msg.add<uint16_t>(player->getFreeRerollTime(preySlotId));
-	writeToOutputBuffer(msg);
-}
-
-void ProtocolGame::sendRerollPrice(uint32_t price)
-{
-	NetworkMessage msg;
-	msg.addByte(0xE9);
-	msg.add<uint32_t>(price);
-
-	writeToOutputBuffer(msg);
-}
-
-void ProtocolGame::sendFreeListRerollAvailability(uint8_t preySlotId, uint16_t time)
-{
-	NetworkMessage msg;
-	msg.addByte(0xE6);
-	msg.add<uint8_t>(preySlotId);
-	msg.add<uint16_t>(time);
-
-	writeToOutputBuffer(msg);
-}
-
-void ProtocolGame::sendPreyTimeLeft(uint8_t preySlotId, uint16_t timeLeft)
-{
-	NetworkMessage msg;
-	msg.addByte(0xE7);
-	msg.add<uint8_t>(preySlotId);
-	msg.add<uint16_t>(timeLeft);
-
-	writeToOutputBuffer(msg);
-}
-
-void ProtocolGame::sendMessageDialog(MessageDialog_t type, const std::string& message)
-{
-	NetworkMessage msg;
-	msg.addByte(0xED);
-	msg.addByte(type);
-	msg.addString(message);
-
-	writeToOutputBuffer(msg);
 }
 
 void ProtocolGame::sendTextMessage(const TextMessage& message)

@@ -3,7 +3,7 @@
 	<configs>
 		<config timeToFreeReroll="1200" /> <!-- minutes -->
 		<config preyDuration="7200" /> <!-- seconds -->
-		<config rerollPricePerLevel	="50" />
+		<config rerollPricePerLevel="50" />
 	</configs>
 
 	<bonuses>

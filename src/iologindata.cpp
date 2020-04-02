@@ -26,7 +26,6 @@
 
 extern ConfigManager g_config;
 extern Game g_game;
-extern Prey g_prey;
 
 Account IOLoginData::loadAccount(uint32_t accno)
 {
@@ -472,6 +471,7 @@ bool IOLoginData::loadPlayer(Player* player, DBResult_ptr result)
 	player->currentOutfit = player->defaultOutfit;
 	player->direction = static_cast<Direction> (result->getNumber<uint16_t>("direction"));
 	player->setBonusRerollCount(result->getNumber<int64_t>("bonusrerollcount"));
+
 	if (g_game.getWorldType() != WORLD_TYPE_PVP_ENFORCED) {
 		const time_t skullSeconds = result->getNumber<time_t>("skulltime") - time(nullptr);
 		if (skullSeconds > 0) {
@@ -617,60 +617,6 @@ bool IOLoginData::loadPlayer(Player* player, DBResult_ptr result)
 	return true;
 }
 
-void IOLoginData::saveItem(PropWriteStream& stream, const Item* item)
-{
-	//Reserve a little space before to avoid massive reallocations
-	std::vector<std::pair<const Container*, ItemDeque::const_reverse_iterator>> savingContainers; savingContainers.reserve(100);
-	const Container* container = item->getContainer();
-	if (!container) {
-		// Write ID & props
-		stream.write<uint16_t>(item->getID());
-		item->serializeAttr(stream);
-		stream.write<uint8_t>(0x00); // attr end
-		return;
-	} else {
-		// Write ID & props
-		stream.write<uint16_t>(item->getID());
-		item->serializeAttr(stream);
-
-		// Hack our way into the attributes
-		stream.write<uint8_t>(ATTR_CONTAINER_ITEMS);
-		stream.write<uint32_t>(container->size());
-
-		savingContainers.emplace_back(container, container->getReversedItems());
-	}
-
-	while (!savingContainers.empty()) {
-		StartSavingContainers:
-		container = savingContainers.back().first;
-		ItemDeque::const_reverse_iterator& it = savingContainers.back().second;
-		for (auto end = container->getReversedEnd(); it != end; ++it) {
-			item = (*it);
-			container = item->getContainer();
-			if (!container) {
-				// Write ID & props
-				stream.write<uint16_t>(item->getID());
-				item->serializeAttr(stream);
-				stream.write<uint8_t>(0x00); // attr end
-			} else {
-				// Write ID & props
-				stream.write<uint16_t>(item->getID());
-				item->serializeAttr(stream);
-
-				// Hack our way into the attributes
-				stream.write<uint8_t>(ATTR_CONTAINER_ITEMS);
-				stream.write<uint32_t>(container->size());
-
-				++it; // Since we're going out of loop increase our iterator here
-				savingContainers.emplace_back(container, container->getReversedItems());
-				goto StartSavingContainers;
-			}
-		}
-		stream.write<uint8_t>(0x00); // attr end
-		savingContainers.pop_back();
-	}
-}
-
 void IOLoginData::readPreyList(std::vector<std::string>& preyList, PropStream& propStream)
 {
 	uint8_t preyListSize;
@@ -762,8 +708,6 @@ void IOLoginData::loadPreyData(std::vector<PreyData>& preyData, DBResult_ptr res
 
 bool IOLoginData::savePreyData(const Player* player)
 {
-	Database& db = Database::getInstance();
-
 	PropWriteStream propWriteStream;
 	player->serializePreyData(propWriteStream);
 
@@ -771,11 +715,65 @@ bool IOLoginData::savePreyData(const Player* player)
 	const char* data = propWriteStream.getStream(dataSize);
 
 	std::ostringstream ss;
-	DBInsert preyQuery("INSERT INTO `player_preydata` (`player_id`, `data`) VALUES ");
+	DBInsert preyQuery(&g_database, "INSERT INTO `player_preydata` (`player_id`, `data`) VALUES ");
 
 	ss << player->getGUID() << ',' << g_database.escapeBlob(data, dataSize);
 	preyQuery.addRow(ss);
 	return preyQuery.execute();
+}
+
+void IOLoginData::saveItem(PropWriteStream& stream, const Item* item)
+{
+	//Reserve a little space before to avoid massive reallocations
+	std::vector<std::pair<const Container*, ItemDeque::const_reverse_iterator>> savingContainers; savingContainers.reserve(100);
+	const Container* container = item->getContainer();
+	if (!container) {
+		// Write ID & props
+		stream.write<uint16_t>(item->getID());
+		item->serializeAttr(stream);
+		stream.write<uint8_t>(0x00); // attr end
+		return;
+	} else {
+		// Write ID & props
+		stream.write<uint16_t>(item->getID());
+		item->serializeAttr(stream);
+
+		// Hack our way into the attributes
+		stream.write<uint8_t>(ATTR_CONTAINER_ITEMS);
+		stream.write<uint32_t>(container->size());
+
+		savingContainers.emplace_back(container, container->getReversedItems());
+	}
+
+	while (!savingContainers.empty()) {
+		StartSavingContainers:
+		container = savingContainers.back().first;
+		ItemDeque::const_reverse_iterator& it = savingContainers.back().second;
+		for (auto end = container->getReversedEnd(); it != end; ++it) {
+			item = (*it);
+			container = item->getContainer();
+			if (!container) {
+				// Write ID & props
+				stream.write<uint16_t>(item->getID());
+				item->serializeAttr(stream);
+				stream.write<uint8_t>(0x00); // attr end
+			} else {
+				// Write ID & props
+				stream.write<uint16_t>(item->getID());
+				item->serializeAttr(stream);
+
+				// Hack our way into the attributes
+				stream.write<uint8_t>(ATTR_CONTAINER_ITEMS);
+				stream.write<uint32_t>(container->size());
+
+				++it; // Since we're going out of loop increase our iterator here
+				savingContainers.emplace_back(container, container->getReversedItems());
+				goto StartSavingContainers;
+			}
+		}
+		stream.write<uint8_t>(0x00); // attr end
+		savingContainers.pop_back();
+	}
 }
 
 bool IOLoginData::saveItems(const Player* player, const ItemBlockList& itemList, std::ostringstream& query, PropWriteStream& propWriteStream, const std::string& table)
@@ -947,16 +945,6 @@ bool IOLoginData::savePlayer(Player* player)
 		return false;
 	}
 
-	query.str(std::string());
-	query << "DELETE FROM `player_preydata` WHERE `player_id` = " << player->getGUID();
-	if (!g_database.executeQuery(query.str())) {
-		return false;
-	}
-
-	if (!savePreyData(player)) {
-		return false;
-	}
-
 	//item saving
 	query.str(std::string());
 	ItemBlockList itemList;
@@ -998,6 +986,16 @@ bool IOLoginData::savePlayer(Player* player)
 
 	propWriteStream.clear();
 	if (!saveItems(player, itemList, query, propWriteStream, "inboxitems")) {
+		return false;
+	}
+
+	query.str(std::string());
+	query << "DELETE FROM `player_preydata` WHERE `player_id` = " << player->getGUID();
+	if (!g_database.executeQuery(query.str())) {
+		return false;
+	}
+
+	if (!savePreyData(player)) {
 		return false;
 	}
 

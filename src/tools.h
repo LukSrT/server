@@ -97,14 +97,6 @@ int64_t OTSYS_TIME();
 
 SpellGroup_t stringToSpellGroup(std::string value);
 
-#if defined(__SSE4_2__)
-int tfs_strncmp(const char* s1, const char* s2, size_t n);
-int tfs_strcmp(const char* s1, const char* s2);
-#else
-#define tfs_strncmp strncmp
-#define tfs_strcmp strcmp
-#endif
-
 template<typename T>
 std::vector<T> selectRandom(std::vector<T> from, size_t k) {
 	std::shuffle(begin(from), std::end(from), getRandomGenerator());
@@ -127,5 +119,13 @@ std::vector<T> selectRandom(std::vector<T> from, size_t k, const std::vector<T>&
 
 	return selectRandom(std::move(wh), k, std::forward<Args>(args)...);
 }
+
+#if defined(__SSE4_2__)
+int tfs_strncmp(const char* s1, const char* s2, size_t n);
+int tfs_strcmp(const char* s1, const char* s2);
+#else
+#define tfs_strncmp strncmp
+#define tfs_strcmp strcmp
+#endif
 
 #endif
