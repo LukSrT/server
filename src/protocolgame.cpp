@@ -293,6 +293,7 @@ void ProtocolGame::onRecvFirstMessage(NetworkMessage& msg)
 	auto sessionArgs = explodeString(sessionKey, "\n", 4);
 	if (sessionArgs.size() != 4) {
 		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 6" << std::endl;
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 6 - SessionKey [ " << sessionKey << " ]" << std::endl;
 		disconnect();
 		return;
 	}
