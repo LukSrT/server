@@ -126,6 +126,7 @@ void ProtocolGame::login(const std::string& name, uint32_t accountId, OperatingS
 			output->addString(ss.str());
 			output->addByte(retryTime);
 			send(output);
+			std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 1" << std::endl;
 			disconnect();
 			return;
 		}
@@ -159,6 +160,7 @@ void ProtocolGame::login(const std::string& name, uint32_t accountId, OperatingS
 		}
 
 		if (foundPlayer->client) {
+			std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 2" << std::endl;
 			foundPlayer->disconnect();
 			foundPlayer->isConnecting = true;
 
@@ -233,7 +235,8 @@ void ProtocolGame::logout(bool displayEffect, bool forced)
 			g_game.addMagicEffect(player->getPosition(), CONST_ME_POFF);
 		}
 	}
-
+	
+	std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 3" << std::endl;
 	disconnect();
 
 	g_game.removeCreature(player);
@@ -242,6 +245,7 @@ void ProtocolGame::logout(bool displayEffect, bool forced)
 void ProtocolGame::onRecvFirstMessage(NetworkMessage& msg)
 {
 	if (g_game.getGameState() == GAME_STATE_SHUTDOWN) {
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 4" << std::endl;
 		disconnect();
 		return;
 	}
@@ -265,6 +269,7 @@ void ProtocolGame::onRecvFirstMessage(NetworkMessage& msg)
 	}
 
 	if (!Protocol::RSA_decrypt(msg)) {
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 5" << std::endl;
 		disconnect();
 		return;
 	}
@@ -287,6 +292,7 @@ void ProtocolGame::onRecvFirstMessage(NetworkMessage& msg)
 
 	auto sessionArgs = explodeString(sessionKey, "\n", 4);
 	if (sessionArgs.size() != 4) {
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 6" << std::endl;
 		disconnect();
 		return;
 	}
@@ -315,6 +321,7 @@ void ProtocolGame::onRecvFirstMessage(NetworkMessage& msg)
 	uint32_t timeStamp = msg.get<uint32_t>();
 	uint8_t randNumber = msg.getByte();
 	if (challengeTimestamp != timeStamp || challengeRandom != randNumber) {
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 7" << std::endl;
 		disconnect();
 		return;
 	}
@@ -391,6 +398,7 @@ void ProtocolGame::disconnectClient(const std::string& message) const
 	output->addByte(0x14);
 	output->addString(message);
 	send(output);
+	std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 8" << std::endl;
 	disconnect();
 }
 
@@ -410,6 +418,7 @@ void ProtocolGame::parsePacket(NetworkMessage& msg)
 
 	if (!player) {
 		if (recvbyte == 0x0F) {
+			std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 9" << std::endl;
 			disconnect();
 		}
 
@@ -419,6 +428,7 @@ void ProtocolGame::parsePacket(NetworkMessage& msg)
 	//a dead player can not performs actions
 	if (player->isRemoved() || player->getHealth() <= 0) {
 		if (recvbyte == 0x0F) {
+			std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 10" << std::endl;
 			disconnect();
 			return;
 		}
@@ -525,6 +535,7 @@ void ProtocolGame::parsePacket(NetworkMessage& msg)
 	}
 
 	if (msg.isOverrun()) {
+		std::cout << "[ProtocolGame::onRecvFirstMessage] Disconect 11" << std::endl;
 		disconnect();
 	}
 }
